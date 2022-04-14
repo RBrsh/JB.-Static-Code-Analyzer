@@ -32,39 +32,62 @@ class CodeAnalyzer:
                     check_result = m(l, m.__name__)
 
                     if check_result:
-                        pass
+                        self.__errors.append(check_result)
 
-    def __check_line_length(self, line: str, method_name: str) -> list:
+    def __check_line_length(self, line: str, method_name: str) -> str:
         """
+        Checks passed line of code to be less or equal to the line length
+        limit, which is 79.
 
         :param line: Code line to be processed.
         :param method_name: Used as a key for error codes dictionary.
-        :return: List of error codes or empty list in case there were no
-        errors.
+        :return: Error code as a string or an empty string in case there was no
+        error.
         """
 
-        res = []
+        res = ''
 
         if len(line) > self.__line_length_limit:
-            res.append(self.__error_codes[method_name])
+            res = self.__error_codes[method_name]
         return res
 
-    def __check_indentation(self, line: str, method_name: str):
-        res = []
+    def __check_indentation(self, line: str, method_name: str) -> str:
+        """
+        Checks passed line of code to be indented with amount of spaces
+        multiple of 4.
+
+        :param line: Code line to be processed.
+        :param method_name: Used as a key for error codes dictionary.
+        :return: Error code as a string or an empty string in case there was no
+        error.
+        """
+        res = ''
+        spaces_counter = 0
+
+        if line and line[0] == ' ':
+            for c in line:
+                if c == ' ':
+                    spaces_counter += 1
+                else:
+                    break
+
+            if (spaces_counter % 4) != 0:
+                res = self.__error_codes[method_name]
 
         return res
 
     def __check_semicolon(self, line: str, method_name: str):
-        print(self.__is_in_string(line, 14))
+        #print(self.__is_in_string(line, 14))
+        pass
 
     def __check_spaces(self, line: str, method_name: str):
-        print('spaces')
+        pass
 
     def __check_todo(self, line: str, method_name: str):
-        print('TODO')
+        pass
 
     def __check_blank_lines(self, line: str, method_name: str):
-        print('Blank lines')
+        pass
 
     def __is_in_comment(self, line: str, pos: int) -> bool:
         """
