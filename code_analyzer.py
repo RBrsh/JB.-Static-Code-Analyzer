@@ -77,8 +77,27 @@ class CodeAnalyzer:
         return res
 
     def __check_semicolon(self, line: str, method_name: str):
-        #print(self.__is_in_string(line, 14))
-        pass
+        """
+        Checks if there is an unnecessary semicolon in the passed code line.
+        Meaning it is not in a comment or a string.
+
+        :param line: Code line to be processed.
+        :param method_name: Used as a key for error codes dictionary.
+        :return: Error code as a string or an empty string in case there was no
+        error.
+        """
+        res = ''
+
+        for i in range(len(line)):
+            if line[i] == ';':
+                if self.__is_in_string(line, i) or \
+                        self.__is_in_comment(line, i):
+                    continue
+
+                res = self.__error_codes[method_name]
+                break
+
+        return res
 
     def __check_spaces(self, line: str, method_name: str):
         pass
@@ -101,7 +120,7 @@ class CodeAnalyzer:
         start = 0
 
         while True:
-            fp = line.find(slcs, start, pos - 1 if pos > 0 else None)
+            fp = line.find(slcs, start, pos if pos > 0 else None)
             if fp > -1:
                 if self.__is_in_string(line, fp):
                     start = fp
@@ -128,7 +147,7 @@ class CodeAnalyzer:
 
         for s in slss:
             while True:
-                fp = line.find(s, start, pos - 1 if pos > 0 else None)
+                fp = line.find(s, start, pos if pos > 0 else None)
                 if fp > -1:
                     start = fp + 1
                     if line[fp - 1] == '\\':
