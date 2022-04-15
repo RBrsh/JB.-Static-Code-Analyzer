@@ -1,8 +1,10 @@
 class CodeAnalyzer:
     def __init__(self, path_to_file):
         self.path_to_file = path_to_file
+        self.__code_lines = []
+
         self.__error_messages = {
-            'S001': 'Line is too long',
+            'S001': 'Line exceed characters limit',
             'S002': 'Indentation is not a multiple of four',
             'S003': 'Unnecessary semicolon after a statement',
             'S004': 'Less than two spaces before inline comments',
@@ -13,54 +15,64 @@ class CodeAnalyzer:
             '__check_line_length': 'S001',
             '__check_indentation': 'S002',
             '__check_semicolon': 'S003',
-            '__check_spaces': 'S004',
+            '__check_spaces_before_comment': 'S004',
             '__check_todo': 'S005',
             '__check_blank_lines': 'S006'
         }
-        self.__errors = []
+        self.__errors = {}
 
         self.__line_length_limit = 79
+        self.__min_spaces_before_comment = ' ' * 2
+        self.__todo_flag = 'todo'
+        self.__comment_flag = '#'
+        self.__max_blank_lines_before = 2
 
-        self.__checks = []
         self.__check_method_prefix = '__check_'
+        self.__checks = []
         self.__prepare_checks()
 
-    def perform_checks(self):
+    def perform_checks(self) -> None:
         with open(self.path_to_file) as fh:
-            for ln, l in enumerate(fh.readlines(), 1):
+            self.__code_lines = fh.readlines()
+
+            for ln in range(1, len(self.__code_lines) + 1):
+                lcr = []  # Line check results
                 for m in self.__checks:
-                    check_result = m(l, m.__name__)
+                    check_result = m(ln, m.__name__)
 
                     if check_result:
-                        self.__errors.append(check_result)
+                        lcr.append(check_result)
 
-    def __check_line_length(self, line: str, method_name: str) -> str:
+                if lcr:
+                    lcr.sort()
+                    self.__errors.update({ln: lcr})
+
+    def __check_line_length(self, line_number: int, method_name: str) -> str:
         """
-        Checks passed line of code to be less or equal to the line length
-        limit, which is 79.
+        Checks line of code to be within the line length limit.
 
-        :param line: Code line to be processed.
+        :param line_number: Code line number to be processed.
         :param method_name: Used as a key for error codes dictionary.
         :return: Error code as a string or an empty string in case there was no
         error.
         """
-
+        line = self.__code_lines[line_number - 1]
         res = ''
 
         if len(line) > self.__line_length_limit:
             res = self.__error_codes[method_name]
         return res
 
-    def __check_indentation(self, line: str, method_name: str) -> str:
+    def __check_indentation(self, line_number: int, method_name: str) -> str:
         """
-        Checks passed line of code to be indented with amount of spaces
-        multiple of 4.
+        Checks line of code to be indented with amount of spaces multiple of 4.
 
-        :param line: Code line to be processed.
+        :param line_number: Code line number to be processed.
         :param method_name: Used as a key for error codes dictionary.
         :return: Error code as a string or an empty string in case there was no
         error.
         """
+        line = self.__code_lines[line_number - 1]
         res = ''
         spaces_counter = 0
 
@@ -76,16 +88,17 @@ class CodeAnalyzer:
 
         return res
 
-    def __check_semicolon(self, line: str, method_name: str):
+    def __check_semicolon(self, line_number: int, method_name: str) -> str:
         """
         Checks if there is an unnecessary semicolon in the passed code line.
         Meaning it is not in a comment or a string.
 
-        :param line: Code line to be processed.
+        :param line_number: Code line number to be processed.
         :param method_name: Used as a key for error codes dictionary.
         :return: Error code as a string or an empty string in case there was no
         error.
         """
+        line = self.__code_lines[line_number - 1]
         res = ''
 
         for i in range(len(line)):
@@ -99,31 +112,105 @@ class CodeAnalyzer:
 
         return res
 
-    def __check_spaces(self, line: str, method_name: str):
-        pass
-
-    def __check_todo(self, line: str, method_name: str):
-        pass
-
-    def __check_blank_lines(self, line: str, method_name: str):
-        pass
-
-    def __is_in_comment(self, line: str, pos: int) -> bool:
+    def __check_spaces_before_comment(self, line_number: int,
+                                      method_name: str) -> str:
         """
-        Checks if passed ... in a comment.
+        Checks if there are at least two spaces before an inline comment.
 
-        :param line: Line of code to be processed
-        :param pos: Position of found error in passed line
-        :return: True if the passed position is in a string, False otherwise.
+        :param line_number: Code line number to be processed.
+        :param method_name: Used as a key for error codes dictionary.
+        :return: Error code as a string or an empty string in case there was no
+        error.
         """
-        slcs = '#'  # Single line comment symbol
+        line = self.__code_lines[line_number - 1]
+        res = ''
         start = 0
 
         while True:
-            fp = line.find(slcs, start, pos if pos > 0 else None)
+            lsl = line.lstrip()
+            if lsl and lsl[0] == self.__comment_flag:
+                break
+
+            fp = line.find(self.__comment_flag, start)
+
+            if fp > - 1:
+                if self.__is_in_string(line, fp):
+                    start = fp + 1
+                    continue
+
+                if line[fp - 2:fp] != self.__min_spaces_before_comment:
+                    res = self.__error_codes[method_name]
+
+            break
+
+        return res
+
+    def __check_todo(self, line_number: int, method_name: str) -> str:
+        """
+        Checks if there is a to-do in a comment.
+
+        :param line_number: Code line number to be processed.
+        :param method_name: Used as a key for error codes dictionary.
+        :return: Error code as a string or an empty string in case there was no
+        error.
+        """
+        line = self.__code_lines[line_number - 1]
+        res = ''
+        start = 0
+
+        while True:
+            fp = line.lower().find(self.__todo_flag, start)
+
+            if fp > -1:
+                if self.__is_in_comment(line, fp):
+                    res = self.__error_codes[method_name]
+                    break
+
+                start = fp + 1
+                continue
+
+            break
+
+        return res
+
+    def __check_blank_lines(self, line_number: int, method_name: str) -> str:
+        """
+        Checks if there are at lease two blank lines before line.
+
+        :param line_number: Code line number to be processed.
+        :param method_name: Used as a key for error codes dictionary.
+        :return: Error code as a string or an empty string in case there was no
+        error.
+        """
+        line = self.__code_lines[line_number - 1]
+        res = ''
+
+        if line_number > self.__max_blank_lines_before and line.strip():
+            counter = 0
+            for i in range(2, self.__max_blank_lines_before + 3):
+                if not self.__code_lines[line_number - i].strip():
+                    counter += 1
+
+            if counter > self.__max_blank_lines_before:
+                res = self.__error_codes[method_name]
+
+        return res
+
+    def __is_in_comment(self, line: str, pos: int) -> bool:
+        """
+        Checks if passed position of the code line is in a comment.
+
+        :param line: Line of code to be processed
+        :param pos: Position of found error in passed line
+        :return: True if the passed position is in a comment, False otherwise.
+        """
+        start = 0
+
+        while True:
+            fp = line.find(self.__comment_flag, start, pos if pos > 0 else None)
             if fp > -1:
                 if self.__is_in_string(line, fp):
-                    start = fp
+                    start = fp + 1
                 else:
                     return True
             else:
@@ -169,7 +256,14 @@ class CodeAnalyzer:
                 return True
         return False
 
-    def __prepare_checks(self):
+    def __prepare_checks(self) -> None:
+        """
+        Looks for callable methods with a prefix set in __check_method_prefix.
+        Adds found method to the __checks list to be called during the code
+        analyzation.
+
+        :return: None
+        """
         for mn in self.__dir__():
             if mn.startswith(f'_{type(self).__name__}'
                              f'{self.__check_method_prefix}'):
@@ -177,14 +271,21 @@ class CodeAnalyzer:
                 if callable(m):
                     self.__checks.append(m)
 
-    def get_errors(self):
-        return self.__errors
+    def get_errors(self) -> list:
+        res = []
+
+        if self.__errors:
+            for ln, le in self.__errors.items():
+                for ec in le:
+                    res.append(f'Line {ln}: {ec} {self.__error_messages[ec]}')
+
+        return res
 
 
 def main():
-    code_analyzed = CodeAnalyzer('tmp_test.py')
+    code_analyzed = CodeAnalyzer(input())
     code_analyzed.perform_checks()
-    print(code_analyzed.get_errors())
+    print(*code_analyzed.get_errors(), sep='\n')
 
 
 if __name__ == '__main__':
