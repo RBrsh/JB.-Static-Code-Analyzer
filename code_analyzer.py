@@ -1,3 +1,7 @@
+import sys
+import os
+
+
 class CodeAnalyzer:
     def __init__(self, path_to_file):
         self.path_to_file = path_to_file
@@ -175,7 +179,7 @@ class CodeAnalyzer:
 
     def __check_blank_lines(self, line_number: int, method_name: str) -> str:
         """
-        Checks if there are at lease two blank lines before line.
+        Checks if there are at least two blank lines before line.
 
         :param line_number: Code line number to be processed.
         :param method_name: Used as a key for error codes dictionary.
@@ -277,15 +281,45 @@ class CodeAnalyzer:
         if self.__errors:
             for ln, le in self.__errors.items():
                 for ec in le:
-                    res.append(f'Line {ln}: {ec} {self.__error_messages[ec]}')
+                    res.append(f'{self.path_to_file}: '
+                               f'Line {ln}: {ec} {self.__error_messages[ec]}')
 
         return res
 
 
+def prep_path_to_files(path):
+    result = []
+
+    if os.path.isfile(path):
+        result.append(path)
+    elif os.path.isdir(path):
+        for p in os.scandir(path):
+            if p.is_file():
+                result.append(p.path)
+            elif p.is_dir():
+                result.extend(prep_path_to_files(p.path))
+
+    result = [i for i in result if os.path.splitext(i)[1] == '.py']
+    return result
+
+
 def main():
-    code_analyzed = CodeAnalyzer(input())
-    code_analyzed.perform_checks()
-    print(*code_analyzed.get_errors(), sep='\n')
+    assert sys.argv[1]
+
+    file_list = []
+    errors = []
+
+    if os.path.exists(sys.argv[1]):
+        file_list = prep_path_to_files(sys.argv[1])
+        file_list.sort()
+
+    for p in file_list:
+        code_analyzed = CodeAnalyzer(p)
+        code_analyzed.perform_checks()
+        errors.extend(code_analyzed.get_errors())
+
+    if errors:
+        print(*errors, sep='\n')
 
 
 if __name__ == '__main__':
