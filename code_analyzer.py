@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 
 
 class CodeAnalyzer:
@@ -13,7 +14,11 @@ class CodeAnalyzer:
             'S003': 'Unnecessary semicolon after a statement',
             'S004': 'Less than two spaces before inline comments',
             'S005': 'TODO found',
-            'S006': 'More than two blank lines preceding a code line '
+            'S006': 'More than two blank lines preceding a code line',
+            'S007': 'Too many spaces after construction_name',
+            'S008': 'Class name class_name should be written in CamelCase',
+            'S009': 'Function name function_name should be written in '
+                    'snake_case'
         }
         self.__error_codes = {
             '__check_line_length': 'S001',
@@ -21,7 +26,10 @@ class CodeAnalyzer:
             '__check_semicolon': 'S003',
             '__check_spaces_before_comment': 'S004',
             '__check_todo': 'S005',
-            '__check_blank_lines': 'S006'
+            '__check_blank_lines': 'S006',
+            '__check_spaces_after_name': 'S007',
+            '__check_class_name': 'S008',
+            '__check_function_name': 'S009'
         }
         self.__errors = {}
 
@@ -29,6 +37,10 @@ class CodeAnalyzer:
         self.__min_spaces_before_comment = ' ' * 2
         self.__todo_flag = 'todo'
         self.__comment_flag = '#'
+        self.__construction_names = {
+            'class_keyword': 'class',
+            'function_keyword': 'def'
+        }
         self.__max_blank_lines_before = 2
 
         self.__check_method_prefix = '__check_'
@@ -200,6 +212,79 @@ class CodeAnalyzer:
 
         return res
 
+    def __check_spaces_after_name(self, line_number: int, method_name: str)\
+            -> str:
+        line = self.__code_lines[line_number - 1]
+        res = ''
+
+        for k, v in self.__construction_names.items():
+            fp = line.find(v)
+
+            if fp > -1:
+                if self.__is_in_comment(line, fp) and \
+                        self.__is_in_string(line, fp):
+                    continue
+
+                offset = fp + len(v)
+                if line[offset:offset + 2] == '  ':
+                    res = f'{self.__error_codes[method_name]}' \
+                          f' {self.__error_messages[self.__error_codes[method_name]]}'.replace('construction_name',
+                                                                                                f"'{v}'")
+
+                break
+
+        return res
+
+    def __check_class_name(self, line_number: int, method_name: str) -> str:
+        line = self.__code_lines[line_number - 1]
+        flag = self.__construction_names['class_keyword']
+        stub = 'class_name'
+        res = ''
+
+        fp = line.lower().find(flag)
+
+        if fp > -1:
+            if not self.__is_in_comment(line, fp) and \
+                    not self.__is_in_string(line, fp):
+                good_pattern = r'^ +([A-Z][a-z]+([A-Z][a-z]+)*) *[:(]*'
+
+                if not re.match(good_pattern, line[fp + len(flag):]):
+                    bad_pattern = r'^ +(\w+) *[:(]*'
+                    m = re.match(bad_pattern, line[fp + len(flag):])
+                    assert m, line
+
+                    class_name = f"'{m.group(1)}'"
+                    msg = self.__error_messages[self.__error_codes[method_name]]
+                    res = f'{self.__error_codes[method_name]} ' \
+                      f'{msg.replace(stub, class_name)}'
+
+        return res
+
+    def __check_function_name(self, line_number: int, method_name: str) -> str:
+        line = self.__code_lines[line_number - 1]
+        flag = self.__construction_names['function_keyword']
+        stub = 'function_name'
+        res = ''
+
+        fp = line.lower().find(flag)
+
+        if fp > -1:
+            if not self.__is_in_comment(line, fp) and \
+                    not self.__is_in_string(line, fp):
+                good_pattern = r'^ +[_]{,2}[a-z]+([_][a-z]+)*[__]{,2}\b\(*'
+
+                if not re.match(good_pattern, line[fp + len(flag):]):
+                    bad_pattern = r'^ +(\w+) *\('
+                    m = re.match(bad_pattern, line[fp + len(flag):])
+                    assert m
+
+                    func_name = f"'{m.group(1)}'"
+                    msg = self.__error_messages[self.__error_codes[method_name]]
+                    res = f'{self.__error_codes[method_name]} ' \
+                      f'{msg.replace(stub, func_name)}'
+
+        return res
+
     def __is_in_comment(self, line: str, pos: int) -> bool:
         """
         Checks if passed position of the code line is in a comment.
@@ -280,9 +365,12 @@ class CodeAnalyzer:
 
         if self.__errors:
             for ln, le in self.__errors.items():
-                for ec in le:
-                    res.append(f'{self.path_to_file}: '
-                               f'Line {ln}: {ec} {self.__error_messages[ec]}')
+                for e in le:
+                    if e in self.__error_messages.keys():
+                        res.append(f'{self.path_to_file}: '
+                                   f'Line {ln}: {e} {self.__error_messages[e]}')
+                    else:
+                        res.append(f'{self.path_to_file}: Line {ln}: {e}')
 
         return res
 
@@ -306,7 +394,7 @@ def prep_path_to_files(path):
 def main():
     assert sys.argv[1]
 
-    file_list = []
+    file_list = ['tmp_test.py']
     errors = []
 
     if os.path.exists(sys.argv[1]):
