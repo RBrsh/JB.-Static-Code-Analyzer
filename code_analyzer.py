@@ -18,7 +18,10 @@ class CodeAnalyzer:
             'S007': 'Too many spaces after construction_name',
             'S008': 'Class name class_name should be written in CamelCase',
             'S009': 'Function name function_name should be written in '
-                    'snake_case'
+                    'snake_case',
+            'S010': 'Argument name arg_name should be written in snake_case',
+            'S011': 'Variable var_name should be written in snake_case',
+            'S012': 'The default argument value is mutable'
         }
         self.__error_codes = {
             '__check_line_length': 'S001',
@@ -29,7 +32,10 @@ class CodeAnalyzer:
             '__check_blank_lines': 'S006',
             '__check_spaces_after_name': 'S007',
             '__check_class_name': 'S008',
-            '__check_function_name': 'S009'
+            '__check_function_name': 'S009',
+            '__check_argument_name': 'S010',
+            '__check_variable_name': 'S011',
+            '__check_argument_mutability': 'S012'
         }
         self.__errors = {}
 
@@ -285,6 +291,15 @@ class CodeAnalyzer:
 
         return res
 
+    def __check_argument_name(self):
+        pass
+
+    def __check_variable_name(self):
+        pass
+
+    def __check_argument_mutability(self):
+        pass
+
     def __is_in_comment(self, line: str, pos: int) -> bool:
         """
         Checks if passed position of the code line is in a comment.
@@ -344,6 +359,9 @@ class CodeAnalyzer:
             if opened:
                 return True
         return False
+
+    def __is_snake_case(self):
+        pass
 
     def __prepare_checks(self) -> None:
         """
