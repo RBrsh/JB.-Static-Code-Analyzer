@@ -1,12 +1,15 @@
 import sys
 import os
 import re
+import ast
 
 
 class CodeAnalyzer:
     def __init__(self, path_to_file):
         self.path_to_file = path_to_file
         self.__code_lines = []
+        self.__code_tree = None
+        self.__code_analyzed = None
 
         self.__error_messages = {
             'S001': 'Line exceed characters limit',
@@ -19,8 +22,8 @@ class CodeAnalyzer:
             'S008': 'Class name class_name should be written in CamelCase',
             'S009': 'Function name function_name should be written in '
                     'snake_case',
-            'S010': 'Argument name arg_name should be written in snake_case',
-            'S011': 'Variable var_name should be written in snake_case',
+            'S010': 'Argument name {stub} should be written in snake_case',
+            'S011': 'Variable {stub} should be written in snake_case',
             'S012': 'The default argument value is mutable'
         }
         self.__error_codes = {
@@ -33,9 +36,9 @@ class CodeAnalyzer:
             '__check_spaces_after_name': 'S007',
             '__check_class_name': 'S008',
             '__check_function_name': 'S009',
-            '__check_argument_name': 'S010',
-            '__check_variable_name': 'S011',
-            '__check_argument_mutability': 'S012'
+            '__ast_check_arguments_names': 'S010',
+            '__ast_check_variables_names': 'S011',
+            '__ast_check_argument_mutability': 'S012'
         }
         self.__errors = {}
 
@@ -48,9 +51,12 @@ class CodeAnalyzer:
             'function_keyword': 'def'
         }
         self.__max_blank_lines_before = 2
+        self.__error_message_stub = '{stub}'
 
         self.__check_method_prefix = '__check_'
-        self.__checks = []
+        self.__ast_check_method_prefix = '__ast_check_'
+        self.__checks = []  # Plain code checks
+        self.__ast_checks = []  # Checks using AST
         self.__prepare_checks()
 
     def perform_checks(self) -> None:
@@ -66,8 +72,16 @@ class CodeAnalyzer:
                         lcr.append(check_result)
 
                 if lcr:
-                    lcr.sort()
                     self.__errors.update({ln: lcr})
+
+            if self.__ast_checks:
+                self.__code_tree = ast.parse(''.join(self.__code_lines))
+
+                for m in self.__ast_checks:
+                    check_result = m(m.__name__)
+
+                    if check_result:
+                        lcr.append(check_result)
 
     def __check_line_length(self, line_number: int, method_name: str) -> str:
         """
@@ -277,10 +291,10 @@ class CodeAnalyzer:
         if fp > -1:
             if not self.__is_in_comment(line, fp) and \
                     not self.__is_in_string(line, fp):
-                good_pattern = r'^ +[_]{,2}[a-z]+([_][a-z]+)*[__]{,2}\b\(*'
+                good_pattern = r'^ +[_]{,2}[a-z]+([_][a-z]+)*[__]{,2} *\(*'
 
                 if not re.match(good_pattern, line[fp + len(flag):]):
-                    bad_pattern = r'^ +(\w+) *\('
+                    bad_pattern = r'^ +[_]{,2}(\w+) *\('
                     m = re.match(bad_pattern, line[fp + len(flag):])
                     assert m
 
@@ -291,14 +305,65 @@ class CodeAnalyzer:
 
         return res
 
-    def __check_argument_name(self):
-        pass
+    def __ast_check_variables_names(self, method_name: str) -> None:
+        log = {}
 
-    def __check_variable_name(self):
-        pass
+        for node in ast.walk(self.__code_tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                if not self.__is_snake_case(node.id):
+                    arg_name = f"'{node.id}'"
+                    msg = self.__error_messages[self.__error_codes[method_name]]
+                    res = f'{self.__error_codes[method_name]} ' \
+                          f'{msg.replace(self.__error_message_stub, arg_name)}'
 
-    def __check_argument_mutability(self):
-        pass
+                    if log.get(node.lineno):
+                        log[node.lineno].append(res)
+                    else:
+                        log[node.lineno] = [res]
+
+        if log:
+            self.__errors.update(log)
+
+    def __ast_check_arguments_names(self, method_name: str) -> None:
+        log = {}
+
+        for node in ast.walk(self.__code_tree):
+            if isinstance(node, ast.FunctionDef):
+                for i in node.args.args:
+                    if not self.__is_snake_case(i.arg):
+                        arg_name = f"'{i.arg}'"
+                        msg = self.__error_messages[self.__error_codes[method_name]]
+                        res = f'{self.__error_codes[method_name]} ' \
+                              f'{msg.replace(self.__error_message_stub, arg_name)}'
+
+                        if log.get(node.lineno):
+                            log[node.lineno].append(res)
+                        else:
+                            log[node.lineno] = [res]
+
+        if log:
+            self.__errors.update(log)
+
+    def __ast_check_argument_mutability(self, method_name: str) -> None:
+        log = {}
+        imm_types = (ast.List, ast.Set, ast.Dict)
+
+        for node in ast.walk(self.__code_tree):
+            if isinstance(node, ast.FunctionDef):
+                for i in node.args.defaults:
+                    if isinstance(i, imm_types):
+                        arg_name = f""
+                        msg = self.__error_messages[self.__error_codes[method_name]]
+                        res = f'{self.__error_codes[method_name]} ' \
+                              f'{msg.replace(self.__error_message_stub, arg_name)}'
+
+                        if log.get(node.lineno):
+                            log[node.lineno].append(res)
+                        else:
+                            log[node.lineno] = [res]
+
+        if log:
+            self.__errors.update(log)
 
     def __is_in_comment(self, line: str, pos: int) -> bool:
         """
@@ -322,7 +387,8 @@ class CodeAnalyzer:
 
         return False
 
-    def __is_in_string(self, line: str, pos: int) -> bool:
+    @staticmethod
+    def __is_in_string(line: str, pos: int) -> bool:
         """
         Checks if passed position is in a string: between single or double
         quotes. Not really between, just checking if there is an opening qute
@@ -360,14 +426,20 @@ class CodeAnalyzer:
                 return True
         return False
 
-    def __is_snake_case(self):
-        pass
+    @staticmethod
+    def __is_snake_case(name: str) -> bool:
+        good_pattern = r'^[_]{,2}[a-z]+([_][a-z]+)*[__]{,2}'
+
+        if re.match(good_pattern, name):
+            return True
+        return False
 
     def __prepare_checks(self) -> None:
         """
-        Looks for callable methods with a prefix set in __check_method_prefix.
-        Adds found method to the __checks list to be called during the code
-        analyzation.
+        Looks for callable methods with a prefix set in __check_method_prefix
+        and __ast_check_method_prefix.
+        Adds found method to the __checks and __ast_checks lists to be called
+        during the code analyzation.
 
         :return: None
         """
@@ -377,12 +449,22 @@ class CodeAnalyzer:
                 m = getattr(self, mn)
                 if callable(m):
                     self.__checks.append(m)
+            elif mn.startswith(f'_{type(self).__name__}'
+                               f'{self.__ast_check_method_prefix}'):
+                m = getattr(self, mn)
+                if callable(m):
+                    self.__ast_checks.append(m)
 
     def get_errors(self) -> list:
         res = []
 
         if self.__errors:
+            self.__errors = \
+                {k: self.__errors[k] for k in sorted(self.__errors)}
+
             for ln, le in self.__errors.items():
+                le.sort()
+
                 for e in le:
                     if e in self.__error_messages.keys():
                         res.append(f'{self.path_to_file}: '
@@ -416,8 +498,8 @@ def main():
     errors = []
 
     if os.path.exists(sys.argv[1]):
-        file_list = prep_path_to_files(sys.argv[1])
-        file_list.sort()
+       file_list = prep_path_to_files(sys.argv[1])
+       file_list.sort()
 
     for p in file_list:
         code_analyzed = CodeAnalyzer(p)
